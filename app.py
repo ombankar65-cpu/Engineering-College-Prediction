@@ -5,55 +5,75 @@ import pandas as pd
 import requests
 from streamlit_lottie import st_lottie
 
-# --- PAGE CONFIG ---
-st.set_page_config(page_title="MHTCET College Predictor", page_icon="🎓", layout="wide")
+# --- 1. PAGE CONFIGURATION ---
+st.set_page_config(
+    page_title="MHTCET College Predictor", 
+    page_icon="🎓", 
+    layout="wide"
+)
 
-# --- CUSTOM CSS ---
+# --- 2. CUSTOM CSS FOR ATTRACTIVE LAYOUT ---
 st.markdown("""
     <style>
     .main {
-        background-color: #f0f2f6;
+        background-color: #f8f9fa;
     }
     .stButton>button {
         width: 100%;
-        border-radius: 5px;
+        border-radius: 8px;
         height: 3em;
-        background-color: #ff4b4b;
+        background-color: #007bff;
         color: white;
-    }
-    .stSelectbox, .stNumberInput {
         font-weight: bold;
+        border: none;
+    }
+    .stButton>button:hover {
+        background-color: #0056b3;
+        border: none;
     }
     .prediction-card {
-        padding: 20px;
+        padding: 30px;
         background-color: white;
-        border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        border-radius: 15px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.1);
         text-align: center;
+        border-left: 10px solid #007bff;
+    }
+    .result-header {
+        color: #1c1c1c;
+        font-family: 'Helvetica Neue', sans-serif;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- LOAD ASSETS ---
+# --- 3. SAFE ANIMATION LOADER (RESOLVES YOUR ERROR) ---
 def load_lottieurl(url):
-    r = requests.get(url)
-    if r.status_code != 200:
+    try:
+        r = requests.get(url, timeout=5)
+        if r.status_code != 200:
+            return None
+        return r.json()
+    except Exception:
+        # Returns None if there's a network error or invalid JSON
         return None
-    return r.json()
 
-lottie_edu = load_lottieurl("https://assets1.lottiefiles.com/packages/lf20_hzfmxos7.json") # Education/Search animation
+# Reliable Lottie animation link
+lottie_url = "https://lottie.host/82544e3d-080c-4976-96b6-397a6e11894a/9M6XnZOfn3.json"
+lottie_data = load_lottieurl(lottie_url)
 
-# --- LOAD MODEL ---
+# --- 4. MODEL LOADING ---
 @st.cache_resource
 def load_model():
-    with open('model.pkl', 'rb') as f:
-        model = pickle.load(f)
-    return model
+    try:
+        with open('model.pkl', 'rb') as f:
+            return pickle.load(f)
+    except FileNotFoundError:
+        st.error("Model file 'model.pkl' not found. Please ensure it's in the same directory.")
+        return None
 
 model = load_model()
 
-# --- MAPPINGS ---
-# Note: Update these mappings if your training encoding was different
+# --- 5. MAPPINGS (Adjust based on your training labels) ---
 gender_map = {"Male": 0, "Female": 1}
 category_map = {
     "OPEN": 0, "OBC": 1, "SC": 2, "ST": 3, 
@@ -61,55 +81,73 @@ category_map = {
     "EWS": 8, "TFWS": 9
 }
 
-# --- HEADER ---
+# --- 6. HEADER SECTION ---
 with st.container():
     col1, col2 = st.columns([2, 1])
     with col1:
-        st.title("🎓 MHTCET College Predictor")
-        st.subheader("Find the best college based on your percentile and category.")
-        st.write("Enter your details in the sidebar to get an instant prediction.")
+        st.title("🎓 Engineering College Predictor")
+        st.write("""
+            Welcome! This tool uses Machine Learning (KNN) to suggest the most likely 
+            college allotment based on your MHTCET percentile and category.
+        """)
     with col2:
-        st_lottie(lottie_edu, height=200, key="edu")
+        # Safety check for Lottie: Only render if data exists
+        if lottie_data:
+            st_lottie(lottie_data, height=180, key="coding")
+        else:
+            st.title("🏛️")
 
 st.divider()
 
-# --- SIDEBAR INPUTS ---
-st.sidebar.header("User Information")
-percentile = st.sidebar.number_input("MHTCET Percentile", min_value=0.0, max_value=100.0, value=90.0, step=0.01)
+# --- 7. SIDEBAR INPUTS ---
+st.sidebar.header("Enter Your Scores")
+percentile = st.sidebar.number_input("MHTCET Percentile", min_value=0.0, max_value=100.0, value=90.0)
 gender = st.sidebar.selectbox("Gender", options=list(gender_map.keys()))
 category = st.sidebar.selectbox("Category", options=list(category_map.keys()))
 
-# --- PREDICTION LOGIC ---
-if st.sidebar.button("Predict College"):
-    # Prepare input data
-    input_data = np.array([[
-        percentile, 
-        gender_map[gender], 
-        category_map[category]
-    ]])
-    
-    try:
-        # Get prediction
-        prediction = model.predict(input_data)
-        
-        # Display Results
-        st.balloons()
-        st.markdown("### 🎯 Predicted College:")
-        st.markdown(f"""
-            <div class="prediction-card">
-                <h2 style='color: #ff4b4b;'>{prediction[0]}</h2>
-                <p style='font-size: 1.2em; color: #555;'>Based on your profile, this college is the best fit according to our model.</p>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        # Additional Info
-        with st.expander("Show Technical Details"):
-            st.write(f"**Input Percentile:** {percentile}")
-            st.write(f"**Encoded Inputs:** {input_data}")
-            
-    except Exception as e:
-        st.error(f"Error during prediction: {e}")
+predict_btn = st.sidebar.button("Predict Best College")
 
-# --- FOOTER ---
-st.markdown("---")
-st.caption("Powered by Streamlit and Scikit-Learn | Built for Engineering Aspirants")
+# --- 8. MAIN CONTENT / RESULTS ---
+if predict_btn:
+    if model:
+        # Encode inputs
+        input_data = np.array([[
+            percentile, 
+            gender_map[gender], 
+            category_map[category]
+        ]])
+        
+        try:
+            # Prediction
+            prediction = model.predict(input_data)
+            
+            st.balloons()
+            
+            # Layout for results
+            st.markdown("### 🎯 Prediction Results")
+            
+            # Metrics for a dashboard feel
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Percentile", f"{percentile}%")
+            m2.metric("Category", category)
+            m3.metric("Gender", gender)
+            
+            st.markdown(f"""
+                <div class="prediction-card">
+                    <p style='color: #666; text-transform: uppercase; letter-spacing: 1px;'>Recommended Institute</p>
+                    <h2 class="result-header">{prediction[0]}</h2>
+                </div>
+            """, unsafe_allow_html=True)
+            
+        except Exception as e:
+            st.error(f"An error occurred during prediction: {e}")
+    else:
+        st.warning("Model not loaded correctly.")
+
+else:
+    # Placeholder when no prediction has been made yet
+    st.info("Adjust the values in the sidebar and click **Predict** to see your results.")
+
+# --- 9. FOOTER ---
+st.markdown("<br><br>", unsafe_allow_html=True)
+st.caption("© 2026 College Prediction System | Designed for Career Guidance")
